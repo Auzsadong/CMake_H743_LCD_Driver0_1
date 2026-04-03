@@ -140,38 +140,36 @@ void disp_disable_update(void)
 
 static void disp_flush(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map)
 {
-    printf("=> [disp_flush] area: x1:%d y1:%d x2:%d y2:%d\r\n", area->x1, area->y1, area->x2, area->y2);
     uint32_t width = lv_area_get_width(area);
     uint32_t height = lv_area_get_height(area);
     uint32_t pixel_cnt = width * height;
 
-    printf("=> 1. LCD_SetWindow...\r\n");
+    /* 1. 设置 LCD 写入窗口 */
     LCD_SetWindow(area->x1, area->y1, area->x2, area->y2);
 
-    // 💣 找到真凶了！把它彻底注释掉！
-    // printf("=> 2. SCB_CleanDCache...\r\n");
-    // SCB_CleanDCache_by_Addr((uint32_t *)px_map, pixel_cnt * 2);
+    // ==========================================
+    // 🌟 核心修复：RGB565 字节交换 (大小端转换)
+    // ==========================================
+    lv_draw_sw_rgb565_swap(px_map, pixel_cnt);
 
-    printf("=> 3. SPI WriteCmd & CS_CLR...\r\n");
+    /* 3. 准备发送像素数据 */
     LCD_WriteCmd(0x2C);
     LCD_DC_DATA;
     LCD_CS_CLR;
 
-    // 🛡️ 强制解锁 HAL 状态机
+    /* 4. 强制解锁 HAL 状态机 (防患于未然) */
     if (hspi1.State != HAL_SPI_STATE_READY) {
-        printf("=> [Warning] SPI was locked! State: %x. Force Unlocking...\r\n", hspi1.State);
         __HAL_UNLOCK(&hspi1);
         hspi1.State = HAL_SPI_STATE_READY;
     }
 
-    printf("=> 4. HAL_SPI_Transmit...\r\n");
-    HAL_StatusTypeDef res = HAL_SPI_Transmit(&hspi1, (uint8_t *)px_map, pixel_cnt * 2, 1000);
+    /* 5. 启动 DMA 异步传输 */
+    HAL_StatusTypeDef res = HAL_SPI_Transmit_DMA(&hspi1, (uint8_t *)px_map, pixel_cnt * 2);
 
-    printf("=> 5. Transmit Result: %d\r\n", res);
-    LCD_CS_SET;
-
-    lv_display_flush_ready(disp);
-    printf("=> 6. Flush Ready End\r\n");
+    if (res != HAL_OK) {
+        LCD_CS_SET;
+        lv_display_flush_ready(disp);
+    }
 }
 
 #else /*Enable this file at the top*/

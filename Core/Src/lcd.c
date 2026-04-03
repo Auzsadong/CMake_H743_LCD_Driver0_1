@@ -43,7 +43,7 @@ void LCD_Init(void) {
 
     LCD_WriteCmd(0xf0); LCD_WriteData(0xc3);
     LCD_WriteCmd(0xf0); LCD_WriteData(0x96);
-    LCD_WriteCmd(0x36); LCD_WriteData(0x48); // 方向控制
+    LCD_WriteCmd(0x36); LCD_WriteData(0x40);
     LCD_WriteCmd(0x3A); LCD_WriteData(0x55); // 16位像素格式
     LCD_WriteCmd(0xB4); LCD_WriteData(0x01);
     LCD_WriteCmd(0xB7); LCD_WriteData(0xC6);
