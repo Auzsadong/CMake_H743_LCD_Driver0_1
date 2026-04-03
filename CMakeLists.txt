@@ -28,7 +28,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
 # 自动搜寻 LVGL 内部的所有 .c 源代码
 file(GLOB_RECURSE LVGL_SOURCES
-        "Middlewares/lvgl/src/*.c"
+        "User_Modules/lvgl/src/*.c"
 )
 
 # 明确定义你的业务逻辑源码
@@ -67,8 +67,8 @@ add_executable(${CMAKE_PROJECT_NAME}
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         Core/Inc
-        Middlewares/lvgl          # 包含 lvgl.h, lv_conf.h
-        Middlewares/lvgl/src      # LVGL 内部组件搜索路径 (如 lv_tick.h)
+        User_Modules/lvgl
+        User_Modules/lvgl/src
 )
 
 # ====================================================================

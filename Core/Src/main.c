@@ -289,7 +289,6 @@ int main(void)
 
       // 每隔几毫秒调用一次 LVGL 任务处理器
       lv_timer_handler();
-      printf("\r\n\r\n---working ---\r\n");
       HAL_Delay(5);
 
     /* USER CODE END WHILE */
