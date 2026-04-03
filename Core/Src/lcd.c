@@ -130,3 +130,15 @@ void LCD_ColorFill_DMA(uint16_t *color_buf, uint32_t size) {
         __NOP();
     }
 }
+/* * 6. DMA 纯数据泵 (用于分块连续刷屏，不带 0x2C 指令)
+ */
+void LCD_PushData_DMA(uint16_t *color_buf, uint32_t size) {
+    // 同样需要清理 Cache
+    SCB_CleanDCache_by_Addr((uint32_t *)color_buf, size * 2);
+
+    LCD_DC_DATA;
+    LCD_CS_CLR;
+
+    // 启动 DMA 传输
+    HAL_SPI_Transmit_DMA(&hspi1, (uint8_t *)color_buf, size * 2);
+}

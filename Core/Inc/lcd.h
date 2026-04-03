@@ -39,5 +39,6 @@ void LCD_WriteData(uint8_t data);
 void LCD_Init(void);
 void LCD_SetWindow(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);
 void LCD_ColorFill_DMA(uint16_t *color_buf, uint32_t size);
+void LCD_PushData_DMA(uint16_t *color_buf, uint32_t size);
 
 #endif //LCD_H

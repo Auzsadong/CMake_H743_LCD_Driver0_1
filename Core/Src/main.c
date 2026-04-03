@@ -123,56 +123,65 @@ int main(void)
   /* USER CODE BEGIN 2 */
   LCD_Init();
 
-  // 测试 100x100 窗口的刷新率
-  LCD_SetWindow(0, 0, 99, 99);
+  // 1. 设置刷新窗口为整块 3.5 寸屏幕
+  LCD_SetWindow(0, 0, 319, 479);
 
   uint8_t color_toggle = 0;
-
-  // 用于帧率统计的局部变量
   uint32_t frame_count = 0;
   uint32_t start_time = HAL_GetTick();
-
-  char test_tx_buf[] = "Hello UART4! STM32H7 is running.\r\n";
-  // 阻塞发送数据
-  HAL_UART_Transmit(&huart4, (uint8_t*)test_tx_buf, strlen(test_tx_buf), HAL_MAX_DELAY);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    // 1. 死等上一帧 DMA 发完
-    while(spi_dma_is_done == 0) {
-      __NOP();
+    while (1)
+    {
+      // --- 1. 计算与打印帧率 ---
+      if (HAL_GetTick() - start_time >= 1000) {
+        current_fps = frame_count;
+        frame_count = 0;
+        start_time = HAL_GetTick();
+        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+
+        printf("TFT FULL-SCREEN Refresh Rate: %lu FPS\r\n", current_fps);
+      }
+
+      // --- 2. 准备下一帧的颜色 (红蓝交替) ---
+      uint16_t current_color = (color_toggle == 0) ? 0xF800 : 0x001F;
+      color_toggle = !color_toggle;
+      current_color = (current_color >> 8) | (current_color << 8); // 大小端转换
+
+      // 把这 20 行的小显存填满
+      for(uint32_t i = 0; i < 320 * 20; i++) {
+        test_color_buf[i] = current_color;
+      }
+
+      // --- 3. 开始执行全屏分块传输 ---
+
+      // 告诉屏幕：我要开始写像素数据了
+      LCD_WriteCmd(0x2C);
+
+      // 循环 24 次，把这 20 行的数据像盖楼一样，一层层堆满 480 行
+      for(int chunk = 0; chunk < 24; chunk++) {
+        // 等待上一个分块发送完成
+        while(spi_dma_is_done == 0) {
+          __NOP();
+        }
+
+        spi_dma_is_done = 0;
+        // 发送这 20 行的数据 (6400 像素)
+        LCD_PushData_DMA(test_color_buf, 320 * 20);
+      }
+
+      // 必须等待最后一块数据发完，这完整的一帧才算画完！
+      while(spi_dma_is_done == 0) {
+        __NOP();
+      }
+
+      // 一帧完整的全屏刷新结束！
+      frame_count++;
     }
-
-    // 2. --- 核心：计算 FPS ---
-    frame_count++; // 只要发完一帧，计数器加1
-    // 检查是否过去了 1000 毫秒 (1秒)
-    if (HAL_GetTick() - start_time >= 1000) {
-      current_fps = frame_count; // 将这1秒内跑的帧数存入全局变量
-      frame_count = 0;           // 清零计数器，准备下1秒
-      start_time = HAL_GetTick();// 重置起始时间
-
-      // 让 LED 跟着心跳每秒闪烁一次，证明单片机没死机而且在疯狂工作
-      HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-
-      printf("TFT DMA Refresh Rate: %lu FPS\r\n", current_fps);
-    }
-
-    // 3. 准备下一帧的颜色数据 (包含大小端转换)
-    uint16_t current_color = (color_toggle == 0) ? 0xF800 : 0x001F;
-    color_toggle = !color_toggle;
-    current_color = (current_color >> 8) | (current_color << 8);
-
-    // CPU 疯狂填满显存
-    for(uint32_t i = 0; i < 100 * 100; i++) {
-      test_color_buf[i] = current_color;
-    }
-
-    // 4. 启动 DMA (注意这里没有 HAL_Delay 了！)
-    spi_dma_is_done = 0;
-    LCD_ColorFill_DMA(test_color_buf, 100 * 100);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
