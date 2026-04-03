@@ -1,72 +1,94 @@
 cmake_minimum_required(VERSION 3.22)
 
-#
-# This file is generated only once,
-# and is not re-generated if converter is called multiple times.
-#
-# User is free to modify the file as much as necessary
-#
-
-# Setup compiler settings
+# 1. 项目基础设置
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 
-
-# Define the build type
+# 定义构建类型 (Debug/Release)
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Debug")
+    set(CMAKE_BUILD_TYPE "Release") # 改为 Release 模式，自动开启 -O3 优化
 endif()
 
-# Set the project name
+add_compile_options(-O2)
+
 set(CMAKE_PROJECT_NAME CMake_LCD_Driver0_1)
-
-# Enable compile command to ease indexing with e.g. clangd
-set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
-
-# Core project settings
 project(${CMAKE_PROJECT_NAME})
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
-# Enable CMake support for ASM and C languages
+# 启用 C 和 汇编语言支持
 enable_language(C ASM)
 
-# Create an executable object type
-add_executable(${CMAKE_PROJECT_NAME}
-        Core/Src/lcd.c
-        Core/Inc/lcd.h
-        Core/Src/ft6336u.c
-        Core/Inc/ft6336u.h)
+# 启用编译命令导出 (方便 clangd 等插件索引)
+set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
-# Add STM32CubeMX generated sources
+# ====================================================================
+# 2. 源码搜寻与定义
+# ====================================================================
+
+# 自动搜寻 LVGL 内部的所有 .c 源代码
+file(GLOB_RECURSE LVGL_SOURCES
+        "Middlewares/lvgl/src/*.c"
+)
+
+# 明确定义你的业务逻辑源码
+# 建议包含 Core/Src 下的所有核心文件，确保链接完整性
+set(USER_SOURCES
+        Core/Src/main.c
+        Core/Src/gpio.c
+        Core/Src/dma.c
+        Core/Src/i2c.c
+        Core/Src/spi.c
+        Core/Src/usart.c
+        Core/Src/quadspi.c
+        Core/Src/stm32h7xx_it.c
+        Core/Src/stm32h7xx_hal_msp.c
+        Core/Src/lcd.c
+        Core/Src/ft6336u.c
+        Core/Src/lv_port_disp.c
+        Core/Src/lv_port_indev.c
+        Core/Src/sysmem.c
+        Core/Src/syscalls.c
+)
+
+# ====================================================================
+# 3. 创建执行文件 (Target)
+# ====================================================================
+
+# 【关键修正】将 USER_SOURCES 和 LVGL_SOURCES 同时加入，解决 undefined reference 错误
+add_executable(${CMAKE_PROJECT_NAME}
+        ${USER_SOURCES}
+        ${LVGL_SOURCES}
+)
+
+# ====================================================================
+# 4. 包含目录 (Include Paths)
+# ====================================================================
+
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+        Core/Inc
+        Middlewares/lvgl          # 包含 lvgl.h, lv_conf.h
+        Middlewares/lvgl/src      # LVGL 内部组件搜索路径 (如 lv_tick.h)
+)
+
+# ====================================================================
+# 5. STM32CubeMX 子项目集成
+# ====================================================================
+
+# 引入 CubeMX 生成的 CMake 脚本
 add_subdirectory(cmake/stm32cubemx)
 
-# Link directories setup
-target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined library search paths
+# 链接 CubeMX 生成的硬件库
+target_link_libraries(${CMAKE_PROJECT_NAME}
+        stm32cubemx
 )
 
-# Add sources to executable
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user sources here
-)
+# ====================================================================
+# 6. 其他配置
+# ====================================================================
 
-# Add include paths
-target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined include paths
-)
-
-# Add project symbols (macros)
-target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined symbols
-)
-
-# Remove wrong libob.a library dependency when using cpp files
+# 移除在使用 C++ 时可能出现的错误库依赖
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 
-# Add linked libraries
-target_link_libraries(${CMAKE_PROJECT_NAME}
-    stm32cubemx
-
-    # Add user defined libraries
-)
+# (可选) 如果你需要打印内存占用情况，可以根据编译器添加链接参数
+# target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "-Wl,--print-memory-usage")

@@ -1,51 +1,7 @@
 /*
 ******************************************************************************
-**
-
-**  File        : LinkerScript.ld
-**
-**  Author		: STM32CubeMX
-**
-**  Abstract    : Linker script for STM32H743VGTx series
-**                1024Kbytes FLASH and 1056Kbytes RAM
-**
-**                Set heap size, stack size and stack location according
-**                to application requirements.
-**
-**                Set memory bank area and size if external memory is used.
-**
-**  Target      : STMicroelectronics STM32
-**
-**  Distribution: The file is distributed “as is,” without any warranty
-**                of any kind.
-**
-*****************************************************************************
-** @attention
-**
-** <h2><center>&copy; COPYRIGHT(c) 2025 STMicroelectronics</center></h2>
-**
-** Redistribution and use in source and binary forms, with or without modification,
-** are permitted provided that the following conditions are met:
-**   1. Redistributions of source code must retain the above copyright notice,
-**      this list of conditions and the following disclaimer.
-**   2. Redistributions in binary form must reproduce the above copyright notice,
-**      this list of conditions and the following disclaimer in the documentation
-**      and/or other materials provided with the distribution.
-**   3. Neither the name of STMicroelectronics nor the names of its contributors
-**      may be used to endorse or promote products derived from this software
-**      without specific prior written permission.
-**
-** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-** AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-** IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-** DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-** FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-** DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-** SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-** CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-** OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-**
+** File        : LinkerScript.ld
+** Author      : STM32CubeMX (Modified for D2 Domain SRAM Support)
 *****************************************************************************
 */
 
@@ -60,15 +16,14 @@ RAM (xrw)      : ORIGIN = 0x24000000, LENGTH = 512K
 RAM_D2 (xrw)      : ORIGIN = 0x30000000, LENGTH = 288K
 RAM_D3 (xrw)      : ORIGIN = 0x38000000, LENGTH = 64K
 ITCMRAM (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 512K
-FLASH2 (rx)      : ORIGIN = 0x8100000, LENGTH = 512K
+FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 1024K   /* 直接改成 1024K */
 }
 
 /* Highest address of the user mode stack */
 _estack = ORIGIN(DTCMRAM) + LENGTH(DTCMRAM);    /* end of RAM */
 /* Generate a link error if heap and stack don't fit into RAM */
 _Min_Heap_Size = 0x200;      /* required amount of heap  */
-_Min_Stack_Size = 0x400; /* required amount of stack */
+_Min_Stack_Size = 0x2000; /* required amount of stack */
 
 /* Define output sections */
 SECTIONS
@@ -107,14 +62,14 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  .ARM.extab (READONLY) : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  .ARM.extab (READONLY) :
   {
     . = ALIGN(4);
     *(.ARM.extab* .gnu.linkonce.armextab.*)
     . = ALIGN(4);
   } >FLASH
 
-  .ARM (READONLY) : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  .ARM (READONLY) :
   {
     . = ALIGN(4);
     __exidx_start = .;
@@ -123,7 +78,7 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  .preinit_array (READONLY) : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  .preinit_array (READONLY) :
   {
     . = ALIGN(4);
     PROVIDE_HIDDEN (__preinit_array_start = .);
@@ -132,7 +87,7 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  .init_array (READONLY) : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  .init_array (READONLY) :
   {
     . = ALIGN(4);
     PROVIDE_HIDDEN (__init_array_start = .);
@@ -142,7 +97,7 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  .fini_array (READONLY) : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  .fini_array (READONLY) :
   {
     . = ALIGN(4);
     PROVIDE_HIDDEN (__fini_array_start = .);
@@ -191,12 +146,11 @@ SECTIONS
   PROVIDE( __data_source = LOADADDR(.data) );
   PROVIDE( __data_source_end = __tdata_source_end );
   PROVIDE( __data_source_size = __data_source_end - __data_source );
+
   /* Uninitialized data section */
   .tbss (NOLOAD) : ALIGN(4)
   {
-     /* This is used by the startup in order to initialize the .bss secion */
-    _sbss = .;         /* define a global symbol at bss start */
-    __bss_start__ = _sbss;
+    /* 这里绝对不能有 _sbss = .; */
     *(.tbss .tbss.*)
     . = ALIGN(4);
     PROVIDE( __tbss_end = . );
@@ -214,21 +168,19 @@ SECTIONS
   PROVIDE( __arm32_tls_tcb_offset = MAX(8, __tls_align) );
   PROVIDE( __arm64_tls_tcb_offset = MAX(16, __tls_align) );
 
-  .bss (NOLOAD) : ALIGN(4)
+.bss :
   {
+    _sbss = .;
+    __bss_start__ = _sbss;
+
     *(.bss)
     *(.bss*)
     *(COMMON)
 
-      . = ALIGN(4);
-    _ebss = .;         /* define a global symbol at bss end */
+    . = ALIGN(4);
+    _ebss = .;
     __bss_end__ = _ebss;
-      PROVIDE( __bss_end = .);
-  } >DTCMRAM
-  PROVIDE( __non_tls_bss_start = ADDR(.bss) );
-
-  PROVIDE( __bss_start = __tbss_start );
-  PROVIDE( __bss_size = __bss_end - __bss_start );
+  } >DTCMRAM   /* <---- 关键点：从 >RAM 改回 >DTCMRAM！ */
 
   /* User_heap_stack section, used to check that there is enough RAM left */
   ._user_heap_stack (NOLOAD) :
@@ -241,7 +193,17 @@ SECTIONS
     . = ALIGN(8);
   } >DTCMRAM
 
-
+  /* ========================================================================
+     【新增】将 .RAM_D2 段映射到 D2 域 SRAM1 (0x30000000)
+     使用 (NOLOAD) 确保其不占用 FLASH 空间
+     ======================================================================== */
+  .ram_d2 (NOLOAD) :
+  {
+    . = ALIGN(32);
+    *(.RAM_D2)
+    *(.RAM_D2*)
+    . = ALIGN(32);
+  } >RAM_D2
 
   /* Remove information from the standard libraries */
   /DISCARD/ :
@@ -250,5 +212,4 @@ SECTIONS
     libm.a:* ( * )
     libgcc.a:* ( * )
   }
-
 }

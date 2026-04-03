@@ -17,7 +17,7 @@
 #define FT_REG_CHIPID         0xA8    // 芯片 ID 寄存器
 
 /* 预期的芯片 ID */
-#define FT6336U_ID_VALUE      0x51
+#define FT6336U_ID_VALUE      0x11
 
 /* 触摸信息结构体 */
 typedef struct {
