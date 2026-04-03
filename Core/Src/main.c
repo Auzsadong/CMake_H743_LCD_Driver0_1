@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "dma.h"
+#include "i2c.h"
 #include "quadspi.h"
 #include "spi.h"
 #include "usart.h"
@@ -29,6 +30,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "ft6336u.h"
 #include "lcd.h"
 /* USER CODE END Includes */
 
@@ -203,6 +205,7 @@ int main(void)
   MX_SPI1_Init();
   MX_UART4_Init();
   MX_QUADSPI_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   LCD_Init();
 
@@ -219,7 +222,9 @@ int main(void)
   printf("Read Flash [3]: 0x%02X\r\n", flash_ptr[3]);
   printf("------------------------\r\n");
   
-
+  if (FT6336U_Init() == 0) {
+    HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_RESET); // 成功则点亮 LED1
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -228,8 +233,13 @@ int main(void)
   {
     while (1)
     {
-      HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-      HAL_Delay(500);
+      FT6336U_Touch_t my_touch;
+      FT6336U_Get_Touch(&my_touch);
+
+      if (my_touch.is_pressed) {
+        printf("Touch Detected! X: %d, Y: %d\r\n", my_touch.x, my_touch.y);
+        HAL_Delay(100); // 避免串口打印过快
+      }
     }
     /* USER CODE END WHILE */
 
