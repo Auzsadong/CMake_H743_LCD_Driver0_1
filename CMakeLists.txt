@@ -30,7 +30,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 file(GLOB_RECURSE LVGL_SOURCES
         "User_Modules/lvgl/src/*.c"
 )
-
+# 自动搜寻 SquareLine 生成的 UI 源代码 【新增这一段】
+file(GLOB_RECURSE UI_SOURCES
+        "User_Modules/GUI_App/*.c"
+)
 # 明确定义你的业务逻辑源码
 # 建议包含 Core/Src 下的所有核心文件，确保链接完整性
 set(USER_SOURCES
@@ -59,6 +62,7 @@ set(USER_SOURCES
 add_executable(${CMAKE_PROJECT_NAME}
         ${USER_SOURCES}
         ${LVGL_SOURCES}
+        ${UI_SOURCES}
 )
 
 # ====================================================================
@@ -69,6 +73,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         Core/Inc
         User_Modules/lvgl
         User_Modules/lvgl/src
+        User_Modules/GUI_App
 )
 
 # ====================================================================

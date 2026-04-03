@@ -34,6 +34,7 @@
 #include "lvgl.h"            // 新增
 #include "lv_port_disp.h"    // 新增
 #include "lv_port_indev.h"   // 新增
+#include "ui.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -276,7 +277,8 @@ int main(void)
   lv_port_indev_init();
 
   printf("=> 4. UI Init...\r\n");
-  lvgl_test_ui();
+  //lvgl_test_ui();
+  ui_init();
 
   printf("LVGL Test Started...\r\n");
   /* USER CODE END 2 */
