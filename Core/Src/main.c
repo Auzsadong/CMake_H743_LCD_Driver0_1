@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "dma.h"
+#include "quadspi.h"
 #include "spi.h"
 #include "usart.h"
 #include "gpio.h"
@@ -86,6 +87,87 @@ int _write(int file, char *ptr, int len) {
   HAL_UART_Transmit(&huart4, (uint8_t *)ptr, len, HAL_MAX_DELAY);
   return len;
 }
+
+// 包含 MPU 和 QSPI 需要的头文件环境
+extern QSPI_HandleTypeDef hqspi;
+
+// 开启 QSPI 内存映射模式 (终极防卡死版)
+void QSPI_Enable_MemoryMappedMode(void) {
+    // ====================================================================
+    // 0. 填坑：强制上拉 IO2(WP) 和 IO3(HOLD) 引脚，防止浮空导致 Flash 锁死
+    // ====================================================================
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLUP; // 【绝对核心：强制开启内部上拉】
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF9_QUADSPI;
+
+    // 重新初始化 PD11, PD12, PD13(HOLD)
+    GPIO_InitStruct.Pin = GPIO_PIN_13 | GPIO_PIN_11 | GPIO_PIN_12;
+    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+    // 重新初始化 PE2(WP)
+    GPIO_InitStruct.Pin = GPIO_PIN_2;
+    HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+    // ====================================================================
+    // 1. 软件复位 W25Q64，唤醒并清除所有异常状态
+    // ====================================================================
+    QSPI_CommandTypeDef sCommand = {0};
+    sCommand.InstructionMode   = QSPI_INSTRUCTION_1_LINE;
+    sCommand.AddressMode       = QSPI_ADDRESS_NONE;
+    sCommand.DataMode          = QSPI_DATA_NONE;
+    sCommand.DummyCycles       = 0;
+
+    sCommand.Instruction = 0x66; // 发送 Reset Enable
+    HAL_QSPI_Command(&hqspi, &sCommand, HAL_MAX_DELAY);
+
+    sCommand.Instruction = 0x99; // 发送 Reset
+    HAL_QSPI_Command(&hqspi, &sCommand, HAL_MAX_DELAY);
+    HAL_Delay(50); // 等待复位完成
+
+    // ====================================================================
+    // 2. MPU 配置：设为 Normal Memory (Non-cacheable)，兼容 AXI 总线
+    // ====================================================================
+    MPU_Region_InitTypeDef MPU_InitStruct = {0};
+    HAL_MPU_Disable();
+    MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+    MPU_InitStruct.Number = MPU_REGION_NUMBER1;
+    MPU_InitStruct.BaseAddress = 0x90000000;
+    MPU_InitStruct.Size = MPU_REGION_SIZE_8MB;
+    MPU_InitStruct.SubRegionDisable = 0x0;
+    MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL1; // 【关键】设为普通内存
+    MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+    MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
+    MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+    MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE; // 依然不使用 Cache 保证数据一致性
+    MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+    HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
+
+    // ====================================================================
+    // 3. 配置指令：进入内存映射 (使用 0x0B Fast Read)
+    // ====================================================================
+    QSPI_MemoryMappedTypeDef sMemMappedCfg = {0};
+
+    sCommand.InstructionMode   = QSPI_INSTRUCTION_1_LINE;
+    sCommand.Instruction       = 0x0B;                    // Fast Read (支持最高 133MHz)
+    sCommand.AddressMode       = QSPI_ADDRESS_1_LINE;
+    sCommand.AddressSize       = QSPI_ADDRESS_24_BITS;
+    sCommand.DataMode          = QSPI_DATA_1_LINE;
+    sCommand.DummyCycles       = 8;                       // 0x0B 指令强制需要 8 个空跑周期
+    sCommand.DdrMode           = QSPI_DDR_MODE_DISABLE;
+    sCommand.DdrHoldHalfCycle  = QSPI_DDR_HHC_ANALOG_DELAY;
+    sCommand.SIOOMode          = QSPI_SIOO_INST_EVERY_CMD;
+
+    sMemMappedCfg.TimeOutActivation = QSPI_TIMEOUT_COUNTER_DISABLE;
+    sMemMappedCfg.TimeOutPeriod     = 0;
+
+    if (HAL_QSPI_MemoryMapped(&hqspi, &sCommand, &sMemMappedCfg) != HAL_OK) {
+        printf("QSPI Memory Mapped Mode Failed!\r\n");
+    } else {
+        printf("QSPI Memory Mapped Mode Success! Mapped to 0x90000000\r\n");
+    }
+}
 /* USER CODE END 0 */
 
 /**
@@ -120,15 +202,24 @@ int main(void)
   MX_DMA_Init();
   MX_SPI1_Init();
   MX_UART4_Init();
+  MX_QUADSPI_Init();
   /* USER CODE BEGIN 2 */
   LCD_Init();
 
-  // 1. 设置刷新窗口为整块 3.5 寸屏幕
-  LCD_SetWindow(0, 0, 319, 479);
+  // 1. 开启 QSPI 内存映射
+  QSPI_Enable_MemoryMappedMode();
 
-  uint8_t color_toggle = 0;
-  uint32_t frame_count = 0;
-  uint32_t start_time = HAL_GetTick();
+  // 2. 暴力读取测试！直接去读 0x90000000 的数据
+  uint8_t *flash_ptr = (uint8_t *)0x90000000;
+
+  printf("\r\n--- W25Q64 Read Test ---\r\n");
+  printf("Read Flash [0]: 0x%02X\r\n", flash_ptr[0]);
+  printf("Read Flash [1]: 0x%02X\r\n", flash_ptr[1]);
+  printf("Read Flash [2]: 0x%02X\r\n", flash_ptr[2]);
+  printf("Read Flash [3]: 0x%02X\r\n", flash_ptr[3]);
+  printf("------------------------\r\n");
+  
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -137,50 +228,8 @@ int main(void)
   {
     while (1)
     {
-      // --- 1. 计算与打印帧率 ---
-      if (HAL_GetTick() - start_time >= 1000) {
-        current_fps = frame_count;
-        frame_count = 0;
-        start_time = HAL_GetTick();
-        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-
-        printf("TFT FULL-SCREEN Refresh Rate: %lu FPS\r\n", current_fps);
-      }
-
-      // --- 2. 准备下一帧的颜色 (红蓝交替) ---
-      uint16_t current_color = (color_toggle == 0) ? 0xF800 : 0x001F;
-      color_toggle = !color_toggle;
-      current_color = (current_color >> 8) | (current_color << 8); // 大小端转换
-
-      // 把这 20 行的小显存填满
-      for(uint32_t i = 0; i < 320 * 20; i++) {
-        test_color_buf[i] = current_color;
-      }
-
-      // --- 3. 开始执行全屏分块传输 ---
-
-      // 告诉屏幕：我要开始写像素数据了
-      LCD_WriteCmd(0x2C);
-
-      // 循环 24 次，把这 20 行的数据像盖楼一样，一层层堆满 480 行
-      for(int chunk = 0; chunk < 24; chunk++) {
-        // 等待上一个分块发送完成
-        while(spi_dma_is_done == 0) {
-          __NOP();
-        }
-
-        spi_dma_is_done = 0;
-        // 发送这 20 行的数据 (6400 像素)
-        LCD_PushData_DMA(test_color_buf, 320 * 20);
-      }
-
-      // 必须等待最后一块数据发完，这完整的一帧才算画完！
-      while(spi_dma_is_done == 0) {
-        __NOP();
-      }
-
-      // 一帧完整的全屏刷新结束！
-      frame_count++;
+      HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+      HAL_Delay(500);
     }
     /* USER CODE END WHILE */
 
