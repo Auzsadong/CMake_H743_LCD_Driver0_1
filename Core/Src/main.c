@@ -196,6 +196,11 @@ void QSPI_Enable_MemoryMappedMode(void) {
         printf("QSPI Memory Mapped Mode Success! Mapped to 0x90000000\r\n");
     }
 }
+/* 把 LVGL 的内部日志对接到串口 */
+void my_lv_log_cb(lv_log_level_t level, const char * buf)
+{
+  printf("[LVGL LOG] %s", buf);
+}
 /* USER CODE END 0 */
 
 /**
@@ -253,6 +258,7 @@ int main(void)
 
   printf("=> 1. LVGL Core Init...\r\n");
   lv_init();
+  lv_log_register_print_cb(my_lv_log_cb);
 
   printf("=> 2. Display Port Init...\r\n");
   lv_port_disp_init();
@@ -266,29 +272,30 @@ int main(void)
 
   // 👇 开始注入我们的动态壁纸
   printf("=> 5. Injecting Dynamic Wallpaper from QSPI...\r\n");
-  if (ui_uiBgPanel == NULL) {
-    printf("!!! ERROR: ui_uiBgPanel is NULL!\r\n");
+  // 【探雷针 1】绕过 SquareLine 的容器，直接挂载到当前激活的底层屏幕上！
+  lv_obj_t * dynamic_bg = lv_gif_create(lv_screen_active());
+
+  if (dynamic_bg == NULL) {
+    printf("!!! FATAL: GIF Object Create Failed!\r\n");
   } else {
-    // 【防坑 1】强制把 SquareLine 默认的白色背景变成完全透明！
-    lv_obj_set_style_bg_opa(ui_uiBgPanel, 0, LV_PART_MAIN);
+    // 塞入 QSPI 里的动图数据
+    lv_gif_set_src(dynamic_bg, &my_wallpaper);
 
-    // 尝试创建 GIF 对象
-    lv_obj_t * dynamic_bg = lv_gif_create(ui_uiBgPanel);
+    // 【探雷针 2】强行锁死尺寸，绝对不给系统压缩它的机会！
+    lv_obj_set_size(dynamic_bg, 320, 427);
+    lv_obj_align(dynamic_bg, LV_ALIGN_CENTER, 0, 0);
 
-    if (dynamic_bg == NULL) {
-      // 【防坑 2】如果走到这里，100% 是 LV_MEM_SIZE 还不够大
-      printf("!!! FATAL: GIF Create Failed! (Out of RAM?)\r\n");
-    } else {
-      // 成功创建，塞入图片数据
-      lv_gif_set_src(dynamic_bg, &my_wallpaper);
-      lv_obj_align(dynamic_bg, LV_ALIGN_CENTER, 0, 0);
+    // 【探雷针 3】给这个 GIF 垫一层刺眼的红色半透明底色！
+    lv_obj_set_style_bg_color(dynamic_bg, lv_color_hex(0xFF0000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(dynamic_bg, 100, LV_PART_MAIN);
 
-      // 👇 加上这一句：强行把 GIF 移动到 UI 树的最顶层，确保没有人能遮挡它
-      // 测试成功后，如果你需要按钮在 GIF 上面，再把这句删掉
-      lv_obj_move_foreground(dynamic_bg);
+    // 把它沉到 UI 树的最底层，让你的按键和开关能浮在它上面
+    lv_obj_move_background(dynamic_bg);
 
-      printf("GIF Inject Success! Address: %p\r\n", dynamic_bg);
-    }
+    // 顺手把 SquareLine 默认的白底屏幕变成透明，防止它遮挡
+    lv_obj_set_style_bg_opa(lv_screen_active(), 0, LV_PART_MAIN);
+
+    printf("GIF Inject Success! Address: %p\r\n", dynamic_bg);
   }
 
   printf("LVGL Test Started...\r\n");
