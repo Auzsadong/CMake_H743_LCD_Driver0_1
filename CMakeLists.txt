@@ -53,6 +53,7 @@ set(USER_SOURCES
         Core/Src/sysmem.c
         Core/Src/syscalls.c
         User_Modules/GUI_App/ui_events.c
+        User_Modules/GUI_App/wallpaper.c
 )
 
 # ====================================================================

@@ -17,6 +17,7 @@ RAM_D2 (xrw)      : ORIGIN = 0x30000000, LENGTH = 288K
 RAM_D3 (xrw)      : ORIGIN = 0x38000000, LENGTH = 64K
 ITCMRAM (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
 FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 1024K   /* 直接改成 1024K */
+QSPI_FLASH (rx) : ORIGIN = 0x90000000, LENGTH = 8M
 }
 
 /* Highest address of the user mode stack */
@@ -212,4 +213,13 @@ SECTIONS
     libm.a:* ( * )
     libgcc.a:* ( * )
   }
+  /* 👇 把下面这段代码原封不动地粘贴到 SECTIONS 里面 */
+    .qspi_data :
+    {
+      . = ALIGN(4);
+      *(.qspi_data)
+      *(.qspi_data*)
+      . = ALIGN(4);
+    } >QSPI_FLASH
+    /* 👆 结束粘贴 */
 }

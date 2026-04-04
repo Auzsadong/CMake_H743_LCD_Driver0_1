@@ -10,8 +10,6 @@
 extern "C" {
 #endif
 
-void on_btn_click_increment(lv_event_t * e);
-
 #ifdef __cplusplus
 } /*extern "C"*/
 #endif

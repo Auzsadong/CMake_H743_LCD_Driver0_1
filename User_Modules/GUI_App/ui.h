@@ -27,9 +27,6 @@ extern "C" {
 
 extern lv_obj_t * ui____initial_actions0;
 
-// IMAGES AND IMAGE SETS
-LV_IMG_DECLARE(ui_img_1598979325);    // assets/2026-03-30 191812.png
-
 // UI INIT
 void ui_init(void);
 void ui_destroy(void);

@@ -8,13 +8,5 @@
 
 void on_btn_click_increment(lv_event_t * e)
 {
-	// 1. 定义一个静态变量来保存计数值（静态变量在函数执行完后不会销毁）
-	static int click_count = 0;
 
-	// 2. 每次点击加 1
-	click_count++;
-
-	// 3. 将新的数值更新到 Label 上
-	// 假设你的 Label 在 SquareLine 里的名字叫 Label1，导出的变量名就是 ui_Label1
-	lv_label_set_text_fmt(ui_uiLabel1, "+%d", click_count);
 }

@@ -73,6 +73,9 @@ volatile uint8_t spi_dma_is_done = 1;
 volatile uint32_t current_fps = 0; // 存放最终计算出的实时帧率
 extern lv_display_t * my_disp_handle;
 
+// 👇 加上这一句，告诉 main.c 你的大壁纸在外部编译单元里
+LV_IMG_DECLARE(my_wallpaper);
+
 // 当 SPI DMA 传输完成时，HAL 库会自动调用这个函数
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi) {
   if (hspi->Instance == SPI1) {
@@ -151,6 +154,22 @@ void QSPI_Enable_MemoryMappedMode(void) {
     MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE; // 依然不使用 Cache 保证数据一致性
     MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
     HAL_MPU_ConfigRegion(&MPU_InitStruct);
+  // ====================================================================
+  // MPU 区域 2 配置：AXI SRAM (0x24000000) 专供 LVGL 使用，必须关闭 Cache
+  // ====================================================================
+  MPU_InitStruct.Enable = MPU_REGION_ENABLE;
+  MPU_InitStruct.Number = MPU_REGION_NUMBER2; // 使用 2 号区域
+  MPU_InitStruct.BaseAddress = 0x24000000;    // AXI SRAM 起始地址
+  MPU_InitStruct.Size = MPU_REGION_SIZE_512KB;
+  MPU_InitStruct.SubRegionDisable = 0x0;
+  MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL1;
+  MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+  MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
+  MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+  MPU_InitStruct.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;   // 【关键！关掉 Cache】
+  MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+  HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
     HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 
     // ====================================================================
@@ -176,41 +195,6 @@ void QSPI_Enable_MemoryMappedMode(void) {
     } else {
         printf("QSPI Memory Mapped Mode Success! Mapped to 0x90000000\r\n");
     }
-}
-
-
-static void btn_event_cb(lv_event_t * e) {
-  lv_event_code_t code = lv_event_get_code(e);
-  lv_obj_t * btn = lv_event_get_target(e);
-  lv_obj_t * label = lv_obj_get_child(btn, 0);
-
-  if(code == LV_EVENT_CLICKED) {
-    static uint8_t cnt = 0;
-    cnt++;
-    lv_label_set_text_fmt(label, "Clicked: %d", cnt);
-    printf("Button Clicked! Count: %d\r\n", cnt);
-  }
-}
-
-/* 创建简单的 LVGL 测试界面 */
-void lvgl_test_ui(void) {
-  /* 1. 创建一个按钮 */
-  lv_obj_t * btn = lv_button_create(lv_screen_active());
-  lv_obj_set_size(btn, 150, 60);
-  lv_obj_center(btn);
-  lv_obj_add_event_cb(btn, btn_event_cb, LV_EVENT_ALL, NULL);
-
-  /* 2. 在按钮内创建标签 */
-  lv_obj_t * label = lv_label_create(btn);
-  lv_label_set_text(label, "Touch Me!");
-  lv_obj_center(label);
-
-  /* 3. 在上方创建一个显示 QSPI 数据的标签 */
-  uint8_t *flash_ptr = (uint8_t *)0x90000000;
-  lv_obj_t * info_label = lv_label_create(lv_screen_active());
-  lv_label_set_text_fmt(info_label, "QSPI Data [0..3]: 0x%02X 0x%02X 0x%02X 0x%02X",
-                        flash_ptr[0], flash_ptr[1], flash_ptr[2], flash_ptr[3]);
-  lv_obj_align(info_label, LV_ALIGN_TOP_MID, 0, 20);
 }
 /* USER CODE END 0 */
 
@@ -277,8 +261,35 @@ int main(void)
   lv_port_indev_init();
 
   printf("=> 4. UI Init...\r\n");
-  //lvgl_test_ui();
+
   ui_init();
+
+  // 👇 开始注入我们的动态壁纸
+  printf("=> 5. Injecting Dynamic Wallpaper from QSPI...\r\n");
+  if (ui_uiBgPanel == NULL) {
+    printf("!!! ERROR: ui_uiBgPanel is NULL!\r\n");
+  } else {
+    // 【防坑 1】强制把 SquareLine 默认的白色背景变成完全透明！
+    lv_obj_set_style_bg_opa(ui_uiBgPanel, 0, LV_PART_MAIN);
+
+    // 尝试创建 GIF 对象
+    lv_obj_t * dynamic_bg = lv_gif_create(ui_uiBgPanel);
+
+    if (dynamic_bg == NULL) {
+      // 【防坑 2】如果走到这里，100% 是 LV_MEM_SIZE 还不够大
+      printf("!!! FATAL: GIF Create Failed! (Out of RAM?)\r\n");
+    } else {
+      // 成功创建，塞入图片数据
+      lv_gif_set_src(dynamic_bg, &my_wallpaper);
+      lv_obj_align(dynamic_bg, LV_ALIGN_CENTER, 0, 0);
+
+      // 👇 加上这一句：强行把 GIF 移动到 UI 树的最顶层，确保没有人能遮挡它
+      // 测试成功后，如果你需要按钮在 GIF 上面，再把这句删掉
+      lv_obj_move_foreground(dynamic_bg);
+
+      printf("GIF Inject Success! Address: %p\r\n", dynamic_bg);
+    }
+  }
 
   printf("LVGL Test Started...\r\n");
   /* USER CODE END 2 */
@@ -289,9 +300,15 @@ int main(void)
   {
 
 
-      // 每隔几毫秒调用一次 LVGL 任务处理器
-      lv_timer_handler();
-      HAL_Delay(5);
+    // 1. 处理 LVGL 核心任务
+    lv_timer_handler();
+
+    // 2. 硬件延时 5 毫秒
+    HAL_Delay(5);
+
+    // 3. 【极度关键】给 LVGL 打心脏起搏器，告诉它过去了 5 毫秒！
+    // 如果没有这句话，GIF 永远静止，啥也画不出来！
+    lv_tick_inc(5);
 
     /* USER CODE END WHILE */
 
